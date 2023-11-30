@@ -1,0 +1,8 @@
+streamlit
+transformers 
+langchain 
+accelerate 
+pdfminer.six 
+sentence-transformers 
+faiss-cpu
+streamlit-chat
