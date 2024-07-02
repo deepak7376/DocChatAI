@@ -1,39 +1,47 @@
-import base64
-import os
-
 import streamlit as st
-from langchain.chains import RetrievalQA
-from langchain.document_loaders import PDFMinerLoader
-from langchain.embeddings import SentenceTransformerEmbeddings
-from langchain.llms import HuggingFacePipeline
+import os
+from langchain_community.document_loaders import PDFMinerLoader
+from langchain_community.embeddings import SentenceTransformerEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.vectorstores import FAISS
-from streamlit_chat import message
+from langchain_community.vectorstores import FAISS
+from langchain.chains import RetrievalQA
+from langchain_community.llms import HuggingFacePipeline
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
 import torch
 
-st.set_page_config(layout="wide")
+st.title("Custom PDF Chatbot")
 
-def process_answer(instruction, qa_chain):
-    response = ''
-    generated_text = qa_chain.run(instruction)
-    return generated_text
-
-# Function to read the current visitor count from a file
-def read_visitor_count():
-    try:
-        with open("visitor_count.txt", "r") as file:
-            count = int(file.read())
-    except FileNotFoundError:
-        count = 0
-    return count
-
-# Function to update and write the visitor count to a file
-def update_visitor_count():
-    count = read_visitor_count() + 1
-    with open("visitor_count.txt", "w") as file:
-        file.write(str(count))
-    return count
+# Custom CSS for chat messages
+st.markdown("""
+    <style>
+        .user-message {
+            text-align: right;
+            background-color: #3c8ce7;
+            color: white;
+            padding: 10px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            display: inline-block;
+            width: fit-content;
+            max-width: 70%;
+            margin-left: auto;
+            box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .assistant-message {
+            text-align: left;
+            background-color: #d16ba5;
+            color: white;
+            padding: 10px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            display: inline-block;
+            width: fit-content;
+            max-width: 70%;
+            margin-right: auto;
+            box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+""", unsafe_allow_html=True)
 
 def get_file_size(file):
     file.seek(0, os.SEEK_END)
@@ -41,29 +49,33 @@ def get_file_size(file):
     file.seek(0)
     return file_size
 
+# Add a sidebar for model selection and user details
+st.sidebar.write("Settings")
+st.sidebar.write("-----------")
+model_options = ["MBZUAI/LaMini-T5-738M", "google/flan-t5-base", "google/flan-t5-small"]
+selected_model = st.sidebar.radio("Choose Model", model_options)
+st.sidebar.write("-----------")
+uploaded_file = st.sidebar.file_uploader("Upload file", type=["pdf"])
+st.sidebar.write("-----------")
+st.sidebar.write("About Me")
+st.sidebar.write("Name: Deepak Yadav")
+st.sidebar.write("Bio: Passionate about AI and machine learning. Enjoys working on innovative projects and sharing knowledge with the community.")
+st.sidebar.write("[GitHub](https://github.com/deepak7376)")
+st.sidebar.write("[LinkedIn](https://www.linkedin.com/in/dky7376/)")
+st.sidebar.write("-----------")
 
 @st.cache_resource
-def data_ingestion():
-    for root, dirs, files in os.walk("docs"):
-        for file in files:
-            if file.endswith(".pdf"):
-                print(file)
-                loader = PDFMinerLoader(os.path.join(root, file))
-
+def initialize_qa_chain(filepath, CHECKPOINT):
+    loader = PDFMinerLoader(filepath)
     documents = loader.load()
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=500)
     splits = text_splitter.split_documents(documents)
 
-    # create embeddings here
+    # Create embeddings 
     embeddings = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
     vectordb = FAISS.from_documents(splits, embeddings)
-    vectordb.save_local("faiss_index")
 
-
-@st.cache_resource
-def initialize_qa_chain(selected_model):
-    # Constants
-    CHECKPOINT = selected_model
+    # Initialize model
     TOKENIZER = AutoTokenizer.from_pretrained(CHECKPOINT)
     BASE_MODEL = AutoModelForSeq2SeqLM.from_pretrained(CHECKPOINT, device_map=torch.device('cpu'), torch_dtype=torch.float32)
     pipe = pipeline(
@@ -74,13 +86,9 @@ def initialize_qa_chain(selected_model):
         do_sample=True,
         temperature=0.3,
         top_p=0.95,
-        # device=torch.device('cpu')
     )
 
     llm = HuggingFacePipeline(pipeline=pipe)
-    embeddings = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
-
-    vectordb = FAISS.load_local("faiss_index", embeddings)
 
     # Build a QA chain
     qa_chain = RetrievalQA.from_chain_type(
@@ -90,93 +98,49 @@ def initialize_qa_chain(selected_model):
     )
     return qa_chain
 
+def process_answer(instruction, qa_chain):
+    generated_text = qa_chain.run(instruction)
+    return generated_text
 
-@st.cache_data
-# function to display the PDF of a given file
-def display_pdf(file):
-    try:
-        # Opening file from file path
-        with open(file, "rb") as f:
-            base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+if uploaded_file is not None:
+    os.makedirs("docs", exist_ok=True)
+    filepath = os.path.join("docs", uploaded_file.name)
+    with open(filepath, "wb") as temp_file:
+        temp_file.write(uploaded_file.read())
+        temp_filepath = temp_file.name
 
-        # Embedding PDF in HTML
-        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
+    with st.spinner('Embeddings are in process...'):
+        qa_chain = initialize_qa_chain(temp_filepath, selected_model)
+else:
+    qa_chain = None
 
-        # Displaying File
-        st.markdown(pdf_display, unsafe_allow_html=True)
-    except Exception as e:
-        st.error(f"An error occurred while displaying the PDF: {e}")
+# Initialize chat history
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
+# Display chat messages from history on app rerun
+for message in st.session_state.messages:
+    if message["role"] == "user":
+        st.markdown(f"<div class='user-message'>{message['content']}</div>", unsafe_allow_html=True)
+    else:
+        st.markdown(f"<div class='assistant-message'>{message['content']}</div>", unsafe_allow_html=True)
 
-# Display conversation history using Streamlit messages
-def display_conversation(history):
-    for i in range(len(history["generated"])):
-        message(history["past"][i], is_user=True, key=f"{i}_user")
-        message(history["generated"][i], key=str(i))
+# React to user input
+if prompt := st.chat_input("What is up?"):
+    # Display user message in chat message container
+    st.markdown(f"<div class='user-message'>{prompt}</div>", unsafe_allow_html=True)
+    # Add user message to chat history
+    st.session_state.messages.append({"role": "user", "content": prompt})
 
+    if qa_chain:
+        # Generate response
+        response = process_answer({'query': prompt}, qa_chain)
+    else:
+        # Prompt to upload a file
+        response = "Please upload a PDF file to enable the chatbot."
 
-def main():
-    # Update the visitor count and get the updated count
-    visitor_count = update_visitor_count()
-
-    # Display the current visitor count
-    st.write(f"Total Visitors: {visitor_count}")
-     # Add a sidebar for model selection
-    model_options = ["MBZUAI/LaMini-T5-738M", "google/flan-t5-base", "google/flan-t5-small"]
-    selected_model = st.sidebar.selectbox("Select Model", model_options)
+    # Display assistant response in chat message container
+    st.markdown(f"<div class='assistant-message'>{response}</div>", unsafe_allow_html=True)
     
-    st.markdown("<h1 style='text-align: center; color: blue;'>Custom PDF Chatbot 🦜📄 </h1>", unsafe_allow_html=True)
-    st.markdown("<h2 style='text-align: center; color:red;'>Upload your PDF, and Ask Questions 👇</h2>", unsafe_allow_html=True)
-
-    uploaded_file = st.file_uploader("", type=["pdf"])
-    
-    if uploaded_file is not None:
-        file_details = {
-            "Filename": uploaded_file.name,
-            "File size": get_file_size(uploaded_file)
-        }
-        os.makedirs("docs", exist_ok=True)
-        filepath = os.path.join("docs", uploaded_file.name)
-        try:
-            with open(filepath, "wb") as temp_file:
-                temp_file.write(uploaded_file.read())
-
-            col1, col2 = st.columns([1, 2])
-            with col1:
-                st.markdown("<h4 style color:black;'>File details</h4>", unsafe_allow_html=True)
-                st.json(file_details)
-                st.markdown("<h4 style color:black;'>File preview</h4>", unsafe_allow_html=True)
-                pdf_view = display_pdf(uploaded_file)
-
-            with col2:
-                st.success(f'model selected successfully: {selected_model}')
-                with st.spinner('Embeddings are in process...'):
-                    ingested_data = data_ingestion()
-                st.success('Embeddings are created successfully!')
-                st.markdown("<h4 style color:black;'>Chat Here</h4>", unsafe_allow_html=True)
-
-                user_input = st.text_input("", key="input")
-
-                # Initialize session state for generated responses and past messages
-                if "generated" not in st.session_state:
-                    st.session_state["generated"] = ["I am ready to help you"]
-                if "past" not in st.session_state:
-                    st.session_state["past"] = ["Hey there!"]
-
-                # Search the database for a response based on user input and update session state
-                if user_input:
-                    answer = process_answer({'query': user_input}, initialize_qa_chain(selected_model))
-                    st.session_state["past"].append(user_input)
-                    response = answer
-                    st.session_state["generated"].append(response)
-
-                # Display conversation history using Streamlit messages
-                if st.session_state["generated"]:
-                    display_conversation(st.session_state)
-
-        except Exception as e:
-            st.error(f"An error occurred: {e}")
-
-
-if __name__ == "__main__":
-    main()
+    # Add assistant response to chat history
+    st.session_state.messages.append({"role": "assistant", "content": response})
