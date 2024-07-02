@@ -1,8 +1,7 @@
 streamlit
 transformers 
 langchain 
+langchain-community
 accelerate 
-pdfminer.six 
 sentence-transformers 
 faiss-cpu
-streamlit-chat
