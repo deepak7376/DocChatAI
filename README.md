@@ -1,4 +1,4 @@
-# LLM-based Custom PDF Chatbot
+# DocChatAI | LLM-based Custom PDF Chatbot
 
 [Project link](https://huggingface.co/spaces/Deepak7376/LLM-based-custom-pdf-chatbot)
 
@@ -30,13 +30,13 @@ This project was developed as an entry for the Streamlit Hackathon in September 
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/deepak7376/LLM-based-custom-pdf-chatbot
+   git clone https://github.com/deepak7376/DocChatAI
    ```
 
 2. Navigate to the project directory:
 
    ```bash
-   cd LLM-based-custom-pdf-chatbot
+   cd DocChatAI
    ```
 
 3. Install dependencies:
